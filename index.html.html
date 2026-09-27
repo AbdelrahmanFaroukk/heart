@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pulse — camera heart rate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1F5; --paper:#FFFFFF; --ink:#1C2230; --muted:#6B7385;
+  --red:#B3122E; --grid:#E3C9CF; --line:#D5DAE3; --ok:#1F7A4D;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#151A24; --paper:#1D2330; --ink:#EDEFF4; --muted:#98A0B3;
+    --red:#FF5A6E; --grid:#3A2830; --line:#2C3444; --ok:#4CC38A;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#151A24; --paper:#1D2330; --ink:#EDEFF4; --muted:#98A0B3;
+  --red:#FF5A6E; --grid:#3A2830; --line:#2C3444; --ok:#4CC38A;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+  font-family:"Figtree",-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+main{max-width:480px;margin:0 auto;padding:20px 20px 32px}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:700;font-size:1.25rem;margin:0;letter-spacing:-.01em}
+.status{font-size:.9rem;color:var(--muted);display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.dot.live{background:var(--red);animation:beat 1s infinite}
+.dot.good{background:var(--ok)}
+@keyframes beat{0%,100%{transform:scale(1)}15%{transform:scale(1.5)}30%{transform:scale(1)}}
+
+.readout{padding:28px 0 8px;display:flex;align-items:baseline;gap:10px}
+.bpm{
+  font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;
+  font-size:clamp(6rem,34vw,9.5rem);line-height:.85;letter-spacing:-.05em;
+  font-variant-numeric:tabular-nums;color:var(--red);
+}
+.bpm.idle{color:var(--muted);opacity:.45;letter-spacing:.02em}
+.unit{font-size:1.1rem;color:var(--muted);font-weight:500}
+
+.strip{
+  position:relative;background:var(--paper);border-radius:14px;overflow:hidden;
+  height:150px;margin:14px 0 6px;
+  background-image:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:20px 20px;background-position:-1px -1px;
+}
+canvas#wave{width:100%;height:100%;display:block}
+.progress{height:4px;background:var(--line);border-radius:2px;overflow:hidden;margin:10px 0 18px}
+.progress > i{display:block;height:100%;width:0;background:var(--red);transition:width .2s linear}
+
+.hint{font-size:1rem;line-height:1.5;color:var(--ink);min-height:3em;margin:0 0 18px}
+button{
+  font:600 1.05rem "Figtree",-apple-system,sans-serif;width:100%;padding:17px;border-radius:999px;
+  border:0;background:var(--red);color:#fff;cursor:pointer;
+}
+button.secondary{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.how{margin-top:28px;border-top:1px solid var(--line);padding-top:18px}
+.how h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:1rem;margin:0 0 10px}
+.how ol{margin:0;padding-left:1.2em;color:var(--muted);line-height:1.6;font-size:.95rem}
+.how p{color:var(--muted);font-size:.85rem;line-height:1.5;margin:14px 0 0}
+video{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.history{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;font-size:.9rem;color:var(--muted)}
+.history span b{color:var(--ink);font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){.dot.live{animation:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Pulse</h1>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">Ready</span></div>
+  </header>
+
+  <div class="readout">
+    <div class="bpm idle" id="bpm">--</div>
+    <div class="unit">bpm</div>
+  </div>
+
+  <div class="strip"><canvas id="wave"></canvas></div>
+  <div class="progress"><i id="bar"></i></div>
+
+  <p class="hint" id="hint">Cover the back camera with your fingertip, then tap Start. Stay still for 20 seconds.</p>
+  <button id="btn">Start measuring</button>
+
+  <div class="history" id="history"></div>
+
+  <section class="how">
+    <h2>For a good reading</h2>
+    <ol>
+      <li>Rest your index fingertip gently over the main back lens. Pressing hard blocks blood flow.</li>
+      <li>Sit near a bright lamp or window. Light shining through your finger is what the camera reads.</li>
+      <li>Keep your hand and phone still until the bar fills.</li>
+    </ol>
+    <p>Safari can't switch on the iPhone flash from a web page, so bright room light matters. This is an estimate for curiosity and fitness, not a medical device.</p>
+  </section>
+  <video id="video" playsinline muted></video>
+  <canvas id="sample" width="40" height="40" hidden></canvas>
+</main>
+
+<script>
+(() => {
+  const DURATION = 20000;       // ms of good signal needed
+  const $ = id => document.getElementById(id);
+  const video = $('video'), sample = $('sample'), sctx = sample.getContext('2d', {willReadFrequently:true});
+  const wave = $('wave'), wctx = wave.getContext('2d');
+  const bpmEl = $('bpm'), hint = $('hint'), btn = $('btn'), bar = $('bar');
+  const dot = $('dot'), statusText = $('statusText'), historyEl = $('history');
+
+  let stream = null, running = false, raf = 0;
+  let samples = [];   // {t, v}
+  let goodTime = 0, lastT = 0;
+
+  function setStatus(txt, cls){ statusText.textContent = txt; dot.className = 'dot' + (cls ? ' ' + cls : ''); }
+
+  function sizeWave(){
+    const r = wave.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    wave.width = r.width * d; wave.height = r.height * d;
+  }
+  window.addEventListener('resize', sizeWave); sizeWave();
+
+  async function start(){
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:{ideal:'environment'}, width:{ideal:640}, height:{ideal:480}, frameRate:{ideal:30} },
+        audio:false
+      });
+    }catch(e){
+      hint.textContent = e.name === 'NotAllowedError'
+        ? 'The camera is blocked here. This happens inside the claude.ai viewer. Open a copy of this page hosted on your own HTTPS site in Safari, and allow the camera when asked.'
+        : 'No camera is available here. Open this page in Safari on your iPhone.';
+      setStatus('No camera');
+      return;
+    }
+    video.srcObject = stream;
+    await video.play();
+    // Try the torch (works on Android Chrome; ignored on iOS Safari)
+    const track = stream.getVideoTracks()[0];
+    try{ await track.applyConstraints({advanced:[{torch:true}]}); }catch(_){}
+
+    samples = []; goodTime = 0; lastT = 0; running = true;
+    btn.textContent = 'Stop'; btn.classList.add('secondary');
+    bpmEl.textContent = '--'; bpmEl.classList.add('idle');
+    setStatus('Looking for finger');
+    loop();
+  }
+
+  function stop(finalBpm){
+    running = false; cancelAnimationFrame(raf);
+    if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+    btn.textContent = 'Measure again'; btn.classList.remove('secondary');
+    if(finalBpm){
+      setStatus('Done', 'good');
+      hint.textContent = `Your pulse is about ${finalBpm} bpm. For best accuracy, take two or three readings while resting.`;
+      addHistory(finalBpm);
+    }else{
+      setStatus('Stopped');
+      hint.textContent = 'Stopped. Cover the back camera with your fingertip and tap to try again.';
+      bar.style.width = '0';
+    }
+  }
+
+  function addHistory(b){
+    const now = new Date();
+    const s = document.createElement('span');
+    s.innerHTML = `<b>${b}</b> at ${now.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`;
+    historyEl.prepend(s);
+    while(historyEl.children.length > 4) historyEl.lastChild.remove();
+  }
+
+  function loop(){
+    if(!running) return;
+    raf = requestAnimationFrame(loop);
+    if(video.readyState < 2) return;
+    const t = performance.now();
+    sctx.drawImage(video, 0, 0, 40, 40);
+    const d = sctx.getImageData(0, 0, 40, 40).data;
+    let r = 0, g = 0, b = 0;
+    for(let i = 0; i < d.length; i += 4){ r += d[i]; g += d[i+1]; b += d[i+2]; }
+    const n = d.length / 4; r /= n; g /= n; b /= n;
+
+    // Finger present: frame is dominated by red, and not too dark
+    const covered = r > 60 && r > g * 1.6 && r > b * 1.6;
+    const dt = lastT ? t - lastT : 0; lastT = t;
+
+    if(!covered){
+      if(goodTime > 0 || samples.length) {
+        setStatus('Finger lost');
+        hint.textContent = r < 60
+          ? 'Too dark. Move toward a bright light and keep your fingertip over the lens.'
+          : 'Cover the back camera fully with your fingertip.';
+      }
+      samples = []; goodTime = 0; bar.style.width = '0';
+      drawWave([]);
+      return;
+    }
+
+    samples.push({t, v:r});
+    // keep last 12 s
+    while(samples.length && t - samples[0].t > 12000) samples.shift();
+    goodTime += dt;
+
+    const pct = Math.min(1, goodTime / DURATION);
+    bar.style.width = (pct * 100) + '%';
+    setStatus('Measuring', 'live');
+
+    const sig = filtered(samples);
+    drawWave(sig);
+
+    if(goodTime > 5000){
+      const est = estimateBpm(sig);
+      if(est){
+        bpmEl.textContent = est; bpmEl.classList.remove('idle');
+        hint.textContent = 'Hold still…';
+      }else{
+        hint.textContent = 'Signal is noisy. Relax your finger pressure and keep still.';
+      }
+      if(pct >= 1 && est){ stop(est); }
+    }else{
+      hint.textContent = 'Finger detected. Hold still…';
+    }
+  }
+
+  // Band-pass-ish: subtract a 1 s moving average (drift), then smooth over ~5 samples (noise)
+  function filtered(s){
+    if(s.length < 10) return [];
+    const out = [];
+    let j0 = 0, sum = 0;
+    for(let i = 0; i < s.length; i++){
+      sum += s[i].v;
+      while(s[i].t - s[j0].t > 1000){ sum -= s[j0].v; j0++; }
+      const mean = sum / (i - j0 + 1);
+      out.push({t:s[i].t, v:s[i].v - mean});
+    }
+    const sm = [];
+    for(let i = 0; i < out.length; i++){
+      let a = 0, c = 0;
+      for(let k = Math.max(0, i - 2); k <= Math.min(out.length - 1, i + 2); k++){ a += out[k].v; c++; }
+      // Invert: blood pulse darkens the frame, so peaks become troughs
+      sm.push({t:out[i].t, v:-(a / c)});
+    }
+    return sm;
+  }
+
+  function estimateBpm(sig){
+    if(sig.length < 60) return null;
+    const recent = sig.filter(p => p.t > sig[sig.length - 1].t - 10000);
+    const vals = recent.map(p => p.v);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length);
+    if(sd < 0.05) return null;
+    const thr = mean + sd * 0.3;
+    const peaks = [];
+    for(let i = 2; i < recent.length - 2; i++){
+      const v = recent[i].v;
+      if(v > thr && v >= recent[i-1].v && v >= recent[i-2].v && v > recent[i+1].v && v >= recent[i+2].v){
+        if(!peaks.length || recent[i].t - peaks[peaks.length - 1] > 330) peaks.push(recent[i].t);
+      }
+    }
+    if(peaks.length < 4) return null;
+    const iv = [];
+    for(let i = 1; i < peaks.length; i++) iv.push(peaks[i] - peaks[i-1]);
+    iv.sort((a, b) => a - b);
+    const med = iv[Math.floor(iv.length / 2)];
+    // reject outlier intervals, then average
+    const good = iv.filter(x => Math.abs(x - med) < med * 0.25);
+    if(good.length < 3) return null;
+    const avg = good.reduce((a, b) => a + b, 0) / good.length;
+    const bpm = Math.round(60000 / avg);
+    return bpm >= 40 && bpm <= 190 ? bpm : null;
+  }
+
+  function drawWave(sig){
+    const W = wave.width, H = wave.height;
+    wctx.clearRect(0, 0, W, H);
+    if(sig.length < 2) return;
+    const win = sig.filter(p => p.t > sig[sig.length - 1].t - 6000);
+    let mn = Infinity, mx = -Infinity;
+    win.forEach(p => { mn = Math.min(mn, p.v); mx = Math.max(mx, p.v); });
+    const range = Math.max(mx - mn, 0.3);
+    const t0 = win[win.length - 1].t - 6000;
+    const color = getComputedStyle(document.documentElement).getPropertyValue('--red').trim();
+    wctx.strokeStyle = color;
+    wctx.lineWidth = 2.5 * (window.devicePixelRatio || 1);
+    wctx.lineJoin = 'round';
+    wctx.beginPath();
+    win.forEach((p, i) => {
+      const x = (p.t - t0) / 6000 * W;
+      const y = H * 0.85 - (p.v - mn) / range * H * 0.7;
+      i ? wctx.lineTo(x, y) : wctx.moveTo(x, y);
+    });
+    wctx.stroke();
+  }
+
+  btn.addEventListener('click', () => running ? stop() : start());
+  document.addEventListener('visibilitychange', () => { if(document.hidden && running) stop(); });
+})();
+</script>
+</body>
+</html>
